@@ -1,3 +1,27 @@
+window.addEventListener('DOMContentLoaded', () => {
+    loadDefaultCSV();
+});
+
+function loadDefaultCSV() {
+    showLoading();
+    Papa.parse("ansan_hospital_2024.csv", {
+        download: true,
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+            processCSVData(results.data);
+            hideLoading();
+        },
+        error: (error) => {
+            console.error('CSV 로드 오류:', error);
+            alert('CSV 파일을 불러오지 못했습니다.');
+            hideLoading();
+        }
+    });
+}
+
+
 // 전역 변수
 let allData = [];
 let filteredData = [];
@@ -115,7 +139,6 @@ function processCSVData(csvContent) {
 
                 // 대시보드 표시
                 hideLoading();
-                uploadScreen.style.display = 'none';
                 dashboardScreen.style.display = 'block';
 
                 // 대시보드 업데이트
