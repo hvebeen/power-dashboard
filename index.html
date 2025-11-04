@@ -12,6 +12,34 @@
 </head>
 <body>
     <div class="container">
+        <!-- 업로드 화면 -->
+        <div id="uploadScreen" class="upload-screen">
+            <div class="upload-box">
+                <div class="upload-icon">📊</div>
+                <h1>전력 데이터 분석 대시보드</h1>
+                <p class="subtitle">CSV 파일을 업로드하여 전력 사용 패턴과 배터리 충전 상태를 분석하세요</p>
+                
+                <div class="file-upload-area">
+                    <label for="fileInput" class="file-upload-btn">
+                        📁 CSV 파일 선택
+                    </label>
+                    <input type="file" id="fileInput" accept=".csv" style="display: none;">
+                    <p class="file-hint">result.csv 파일을 선택해주세요</p>
+                </div>
+
+                <div class="features-box">
+                    <h3>📋 기능 안내</h3>
+                    <ul>
+                        <li>📅 날짜별 선택 및 독립적 분석</li>
+                        <li>🔋 실시간 충전 상태 (충전중/방전중/대기)</li>
+                        <li>🎨 색상 코드로 구분 (초록/주황/회색)</li>
+                        <li>📊 일별 상세분석 및 배터리 상태</li>
+                        <li>⏰ 24시간 시간대별 분석</li>
+                        <li>🔗 부하-가격-배터리 상관관계</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
 
         <!-- 대시보드 화면 -->
         <div id="dashboardScreen" class="dashboard-screen" style="display: none;">
