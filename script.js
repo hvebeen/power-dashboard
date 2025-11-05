@@ -26,44 +26,60 @@ csvUpload.addEventListener('change', function(event) {
     const file = event.target.files[0];
     if (!file) return;
 
+    // 파일명 표시
     fileName.textContent = `${file.name}`;
     showLoading();
 
-    Papa.parse(file, {
-        header: true,
-        dynamicTyping: true,
-        skipEmptyLines: true,
-        complete: function(results) {
-            csvData = results.data;
-            
-            // 헤더 공백 제거
-            csvData = csvData.map(row => {
-                const cleanRow = {};
-                Object.keys(row).forEach(key => {
-                    cleanRow[key.trim()] = row[key];
+    // FileReader로 파일 읽기 (GitHub Pages 호환)
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        const csvText = e.target.result;
+        
+        Papa.parse(csvText, {
+            header: true,
+            dynamicTyping: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                csvData = results.data;
+                
+                // 헤더 공백 제거
+                csvData = csvData.map(row => {
+                    const cleanRow = {};
+                    Object.keys(row).forEach(key => {
+                        cleanRow[key.trim()] = row[key];
+                    });
+                    return cleanRow;
                 });
-                return cleanRow;
-            });
 
-            // 필수 컬럼 확인
-            if (csvData.length === 0 || !csvData[0].timestamp || 
-                csvData[0].load_kW === undefined || 
-                csvData[0].G_kW === undefined ||
-                csvData[0].P_c_kW === undefined || 
-                csvData[0].P_d_kW === undefined) {
-                alert('CSV 파일에 필수 컬럼(timestamp, load_kW, G_kW, P_c_kW, P_d_kW)이 없습니다.');
+                // 필수 컬럼 확인
+                if (csvData.length === 0 || !csvData[0].timestamp || 
+                    csvData[0].load_kW === undefined || 
+                    csvData[0].G_kW === undefined ||
+                    csvData[0].P_c_kW === undefined || 
+                    csvData[0].P_d_kW === undefined) {
+                    alert('CSV 파일에 필수 컬럼(timestamp, load_kW, G_kW, P_c_kW, P_d_kW)이 없습니다.');
+                    hideLoading();
+                    return;
+                }
+
+                initializeDashboard();
                 hideLoading();
-                return;
+            },
+            error: function(error) {
+                alert('CSV 파일을 파싱하는 중 오류가 발생했습니다: ' + error.message);
+                hideLoading();
             }
-
-            initializeDashboard();
-            hideLoading();
-        },
-        error: function(error) {
-            alert('CSV 파일을 읽는 중 오류가 발생했습니다: ' + error.message);
-            hideLoading();
-        }
-    });
+        });
+    };
+    
+    reader.onerror = function() {
+        alert('파일을 읽는 중 오류가 발생했습니다.');
+        hideLoading();
+    };
+    
+    // 텍스트로 파일 읽기
+    reader.readAsText(file);
 });
 
 // 대시보드 초기화
