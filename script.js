@@ -1,214 +1,505 @@
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>전력 데이터 분석 대시보드</title>
-    <link rel="stylesheet" href="style.css">
-    <!-- Chart.js 라이브러리 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
-    <!-- PapaParse CSV 파싱 라이브러리 -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-</head>
-<body>
-    <div class="container">
-        <!-- 업로드 화면 -->
-        <div id="uploadScreen" class="upload-screen">
-            <div class="upload-box">
-                <div class="upload-icon">📊</div>
-                <h1>전력 데이터 분석 대시보드</h1>
-                <p class="subtitle">CSV 파일을 업로드하여 전력 사용 패턴과 배터리 충전 상태를 분석하세요</p>
-                
-                <div class="file-upload-area">
-                    <label for="fileInput" class="file-upload-btn">
-                        📁 CSV 파일 선택
-                    </label>
-                    <input type="file" id="fileInput" accept=".csv" style="display: none;">
-                    <p class="file-hint">result.csv 파일을 선택해주세요</p>
-                </div>
+// 전역 변수
+let csvData = [];
+let loadComparisonChart = null;
+let batteryChart = null;
 
-                <div class="features-box">
-                    <h3>📋 기능 안내</h3>
-                    <ul>
-                        <li>📅 날짜별 선택 및 독립적 분석</li>
-                        <li>🔋 실시간 충전 상태 (충전중/방전중/대기)</li>
-                        <li>🎨 색상 코드로 구분 (초록/주황/회색)</li>
-                        <li>📊 일별 상세분석 및 배터리 상태</li>
-                        <li>⏰ 24시간 시간대별 분석</li>
-                        <li>🔗 부하-가격-배터리 상관관계</li>
-                    </ul>
-                </div>
-            </div>
-        </div>
+// DOM 요소
+const csvUpload = document.getElementById('csv-upload');
+const fileName = document.getElementById('file-name');
+const uploadSection = document.getElementById('upload-section');
+const dashboardSection = document.getElementById('dashboard-section');
+const datePicker = document.getElementById('date-picker');
+const loadingOverlay = document.getElementById('loading');
+const resetBtn = document.getElementById('reset-btn');
 
-        <!-- 대시보드 화면 -->
-        <div id="dashboardScreen" class="dashboard-screen" style="display: none;">
-            <div class="dashboard-header">
-                <h1>전력 데이터 분석 대시보드</h1>
-                <button id="reuploadBtn" class="reupload-btn">🔄 다른 파일 업로드</button>
-            </div>
+// 로딩 표시/숨김
+function showLoading() {
+    loadingOverlay.classList.add('active');
+}
 
-            <!-- 날짜 선택 영역 -->
-            <div class="date-selector">
-                <label>📅 분석 날짜:</label>
-                <select id="dateSelect"></select>
-                <span id="dateInfo" class="date-info"></span>
-                <span id="periodInfo" class="period-info"></span>
-            </div>
+function hideLoading() {
+    loadingOverlay.classList.remove('active');
+}
 
-            <!-- 탭 메뉴 -->
-            <div class="tabs">
-                <button class="tab-btn active" data-tab="daily">📅 일별 상세분석</button>
-                <button class="tab-btn" data-tab="battery">🔋 배터리 상태</button>
-                <button class="tab-btn" data-tab="hourly">⏰ 시간대별 분석</button>
-                <button class="tab-btn" data-tab="stats">📈 통계 요약</button>
-            </div>
+// CSV 파일 업로드 처리
+csvUpload.addEventListener('change', function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
 
-            <!-- 탭 콘텐츠 -->
-            <div id="dailyTab" class="tab-content active">
-                <div class="chart-container">
-                    <h2>{날짜} 일별 전력 사용 패턴</h2>
-                    <canvas id="dailyChart"></canvas>
-                </div>
-                <div class="chart-container">
-                    <h2>시간대별 배터리 충/방전 상태</h2>
-                    <canvas id="batteryAreaChart"></canvas>
-                </div>
-            </div>
+    fileName.textContent = `${file.name}`;
+    showLoading();
 
-            <div id="batteryTab" class="tab-content">
-                <div class="battery-summary">
-                    <div class="summary-card charging">
-                        <div class="icon">🔋</div>
-                        <div class="label">총 충전 시간</div>
-                        <div class="value" id="chargingCount">0회</div>
-                    </div>
-                    <div class="summary-card discharging">
-                        <div class="icon">⚡</div>
-                        <div class="label">총 방전 시간</div>
-                        <div class="value" id="dischargingCount">0회</div>
-                    </div>
-                    <div class="summary-card idle">
-                        <div class="icon">⏸️</div>
-                        <div class="label">대기 시간</div>
-                        <div class="value" id="idleCount">0회</div>
-                    </div>
-                </div>
-                <div class="chart-container">
-                    <h2>배터리 상태 타임라인</h2>
-                    <canvas id="batteryStatusChart"></canvas>
-                </div>
-                <div class="chart-container">
-                    <h2>시간대별 배터리 운영 전략</h2>
-                    <div id="batteryTable"></div>
-                </div>
-            </div>
+    Papa.parse(file, {
+        header: true,
+        dynamicTyping: true,
+        skipEmptyLines: true,
+        complete: function(results) {
+            csvData = results.data;
+            
+            // 헤더 공백 제거
+            csvData = csvData.map(row => {
+                const cleanRow = {};
+                Object.keys(row).forEach(key => {
+                    cleanRow[key.trim()] = row[key];
+                });
+                return cleanRow;
+            });
 
-            <div id="hourlyTab" class="tab-content">
-                <div class="chart-container">
-                    <h2>시간대별 전력 부하 및 가격 패턴</h2>
-                    <canvas id="hourlyChart"></canvas>
-                </div>
-                <div class="chart-container">
-                    <h2>시간대별 발전량 및 저장장치 운영</h2>
-                    <canvas id="hourlyBarChart"></canvas>
-                </div>
-            </div>
+            // 필수 컬럼 확인
+            if (csvData.length === 0 || !csvData[0].timestamp || 
+                csvData[0].load_kW === undefined || 
+                csvData[0].G_kW === undefined ||
+                csvData[0].P_c_kW === undefined || 
+                csvData[0].P_d_kW === undefined) {
+                alert('CSV 파일에 필수 컬럼(timestamp, load_kW, G_kW, P_c_kW, P_d_kW)이 없습니다.');
+                hideLoading();
+                return;
+            }
 
-            <div id="statsTab" class="tab-content">
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <h3>📊 부하 통계</h3>
-                        <div class="stat-row">
-                            <span>최대 부하:</span>
-                            <span id="maxLoad">-</span>
-                        </div>
-                        <div class="stat-row">
-                            <span>최소 부하:</span>
-                            <span id="minLoad">-</span>
-                        </div>
-                        <div class="stat-row">
-                            <span>평균 부하:</span>
-                            <span id="avgLoad">-</span>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <h3>💰 가격 정보</h3>
-                        <div class="stat-row">
-                            <span>저가 (87.3):</span>
-                            <span>심야/새벽</span>
-                        </div>
-                        <div class="stat-row">
-                            <span>중가 (109.8):</span>
-                            <span>일반시간</span>
-                        </div>
-                        <div class="stat-row">
-                            <span>고가 (140.5):</span>
-                            <span>피크시간</span>
-                        </div>
-                    </div>
-                    <div class="stat-card">
-                        <h3>🔋 배터리 효율</h3>
-                        <div class="stat-row">
-                            <span>충전 전략:</span>
-                            <span>저가 시간대</span>
-                        </div>
-                        <div class="stat-row">
-                            <span>방전 전략:</span>
-                            <span>고가 시간대</span>
-                        </div>
-                        <div class="stat-row">
-                            <span>저장 용량:</span>
-                            <span>100kW</span>
-                        </div>
-                    </div>
-                </div>
+            initializeDashboard();
+            hideLoading();
+        },
+        error: function(error) {
+            alert('CSV 파일을 읽는 중 오류가 발생했습니다: ' + error.message);
+            hideLoading();
+        }
+    });
+});
 
-                <div class="insights-box">
-                    <h3>💡 주요 인사이트</h3>
-                    <div class="insight-item">
-                        <strong>🔥 피크 부하 시간대</strong>
-                        <p>오전 8시-11시, 오후 1시-4시에 전력 부하가 높고 가격도 최고 수준을 보입니다.</p>
-                    </div>
-                    <div class="insight-item">
-                        <strong>💡 에너지 효율</strong>
-                        <p>발전량과 부하가 거의 일치하며, 저장장치를 통한 부하 평준화가 이뤄지고 있습니다.</p>
-                    </div>
-                    <div class="insight-item">
-                        <strong>💰 가격 정책</strong>
-                        <p>3단계 가격 체계로 수요 관리를 하고 있습니다.</p>
-                    </div>
-                </div>
-            </div>
+// 대시보드 초기화
+function initializeDashboard() {
+    // 날짜 추출 및 정렬
+    const dates = [...new Set(csvData.map(row => {
+        const date = new Date(row.timestamp);
+        return date.toISOString().split('T')[0];
+    }))].sort();
 
-            <!-- 범례 -->
-            <div class="legend-box">
-                <h3>배터리 상태 범례</h3>
-                <div class="legend-items">
-                    <div class="legend-item">
-                        <span class="legend-dot charging"></span>
-                        <span><strong>🔋 충전중</strong> - 저가 시간대에 에너지 저장</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-dot discharging"></span>
-                        <span><strong>⚡ 방전중</strong> - 고가 시간대에 에너지 공급</span>
-                    </div>
-                    <div class="legend-item">
-                        <span class="legend-dot idle"></span>
-                        <span><strong>⏸️ 대기</strong> - 충전/방전 없음</span>
-                    </div>
-                </div>
-            </div>
-        </div>
+    // 날짜 선택기 채우기
+    datePicker.innerHTML = dates.map(date => 
+        `<option value="${date}">${date}</option>`
+    ).join('');
 
-        <!-- 로딩 화면 -->
-        <div id="loadingScreen" class="loading-screen" style="display: none;">
-            <div class="spinner"></div>
-            <div class="loading-text">데이터 로딩 중...</div>
-            <div class="loading-subtext">CSV 파일을 처리하고 있습니다</div>
-        </div>
-    </div>
+    // 업로드 섹션 숨기고 대시보드 표시
+    uploadSection.style.display = 'none';
+    dashboardSection.style.display = 'block';
 
-    <script src="script.js"></script>
-</body>
-</html>
+    // 첫 번째 날짜로 차트 생성
+    updateCharts(dates[0]);
+
+    // 날짜 변경 이벤트
+    datePicker.addEventListener('change', function() {
+        updateCharts(this.value);
+    });
+}
+
+// 차트 업데이트
+function updateCharts(selectedDate) {
+    showLoading();
+
+    // 선택된 날짜 데이터 필터링
+    const filteredData = csvData.filter(row => {
+        const date = new Date(row.timestamp);
+        return date.toISOString().split('T')[0] === selectedDate;
+    });
+
+    // 시간대별로 데이터 그룹화
+    const hourlyData = {};
+    
+    filteredData.forEach(row => {
+        const date = new Date(row.timestamp);
+        const hour = date.getHours();
+        
+        if (!hourlyData[hour]) {
+            hourlyData[hour] = {
+                loadBefore: [],  // ESS 도입 전 (load_kW)
+                loadAfter: [],   // ESS 도입 후 (G_kW)
+                charging: [],
+                discharging: [],
+                idle: 0
+            };
+        }
+        
+        hourlyData[hour].loadBefore.push(row.load_kW || 0);
+        hourlyData[hour].loadAfter.push(row.G_kW || 0);
+        hourlyData[hour].charging.push(row.P_c_kW || 0);
+        hourlyData[hour].discharging.push(row.P_d_kW || 0);
+        
+        // 대기 상태: 충전도 방전도 아닌 경우
+        if ((row.P_c_kW || 0) === 0 && (row.P_d_kW || 0) === 0) {
+            hourlyData[hour].idle++;
+        }
+    });
+
+    // 0~23시까지 레이블 생성
+    const hours = Array.from({length: 24}, (_, i) => i);
+    const labels = hours.map(h => `${String(h).padStart(2, '0')}:00`);
+
+    // 시간대별 평균 계산
+    const avgLoadBefore = hours.map(h => {
+        const data = hourlyData[h]?.loadBefore || [];
+        return data.length > 0 ? data.reduce((a, b) => a + b, 0) / data.length : 0;
+    });
+
+    const avgLoadAfter = hours.map(h => {
+        const data = hourlyData[h]?.loadAfter || [];
+        return data.length > 0 ? data.reduce((a, b) => a + b, 0) / data.length : 0;
+    });
+
+    const avgCharging = hours.map(h => {
+        const data = hourlyData[h]?.charging || [];
+        return data.length > 0 ? data.reduce((a, b) => a + b, 0) / data.length : 0;
+    });
+
+    const avgDischarging = hours.map(h => {
+        const data = hourlyData[h]?.discharging || [];
+        return data.length > 0 ? data.reduce((a, b) => a + b, 0) / data.length : 0;
+    });
+
+    const idleCount = hours.map(h => hourlyData[h]?.idle || 0);
+
+    // 피크값 계산
+    const peakBefore = Math.max(...avgLoadBefore);
+    const peakAfter = Math.max(...avgLoadAfter);
+
+    // ESS 도입 전후 비교 차트 (Line Chart with Peak Lines)
+    createLoadComparisonChart(labels, avgLoadBefore, avgLoadAfter, peakBefore, peakAfter);
+
+    // 배터리 상태 차트 (Bar Chart)
+    createBatteryChart(labels, avgCharging, avgDischarging, idleCount);
+
+    hideLoading();
+}
+
+// ESS 도입 전후 비교 Line Chart 생성 (피크 가로선 추가)
+function createLoadComparisonChart(labels, loadBefore, loadAfter, peakBefore, peakAfter) {
+    const ctx = document.getElementById('load-comparison-chart').getContext('2d');
+
+    if (loadComparisonChart) {
+        loadComparisonChart.destroy();
+    }
+
+    loadComparisonChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'ESS 도입 전 (load_kW)',
+                    data: loadBefore,
+                    borderColor: '#FF3B30',
+                    backgroundColor: 'rgba(255, 59, 48, 0.1)',
+                    borderWidth: 2.5,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 3,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: '#FF3B30',
+                    pointBorderColor: '#FFFFFF',
+                    pointBorderWidth: 2
+                },
+                {
+                    label: 'ESS 도입 후 (G_kW)',
+                    data: loadAfter,
+                    borderColor: '#007AFF',
+                    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+                    borderWidth: 2.5,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 3,
+                    pointHoverRadius: 6,
+                    pointBackgroundColor: '#007AFF',
+                    pointBorderColor: '#FFFFFF',
+                    pointBorderWidth: 2
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    align: 'start',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 16,
+                        font: {
+                            size: 13,
+                            weight: '500'
+                        }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    titleFont: {
+                        size: 14,
+                        weight: '600'
+                    },
+                    bodyFont: {
+                        size: 13
+                    },
+                    cornerRadius: 8,
+                    displayColors: true,
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.parsed.y.toFixed(2)} kW`;
+                        }
+                    }
+                },
+                annotation: {
+                    annotations: {
+                        peakBeforeLine: {
+                            type: 'line',
+                            yMin: peakBefore,
+                            yMax: peakBefore,
+                            borderColor: '#FF3B30',
+                            borderWidth: 2,
+                            borderDash: [8, 4],
+                            label: {
+                                display: true,
+                                content: `도입 전 피크: ${peakBefore.toFixed(2)} kW`,
+                                position: 'end',
+                                backgroundColor: '#FF3B30',
+                                color: '#FFFFFF',
+                                font: {
+                                    size: 11,
+                                    weight: '600'
+                                },
+                                padding: 6,
+                                borderRadius: 4
+                            }
+                        },
+                        peakAfterLine: {
+                            type: 'line',
+                            yMin: peakAfter,
+                            yMax: peakAfter,
+                            borderColor: '#007AFF',
+                            borderWidth: 2,
+                            borderDash: [8, 4],
+                            label: {
+                                display: true,
+                                content: `도입 후 피크: ${peakAfter.toFixed(2)} kW`,
+                                position: 'start',
+                                backgroundColor: '#007AFF',
+                                color: '#FFFFFF',
+                                font: {
+                                    size: 11,
+                                    weight: '600'
+                                },
+                                padding: 6,
+                                borderRadius: 4
+                            }
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        font: {
+                            size: 12
+                        },
+                        callback: function(value) {
+                            return value.toFixed(0) + ' kW';
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: '부하 (kW)',
+                        font: {
+                            size: 13,
+                            weight: '600'
+                        },
+                        padding: {
+                            top: 10
+                        }
+                    }
+                },
+                x: {
+                    grid: {
+                        display: false,
+                        drawBorder: false
+                    },
+                    ticks: {
+                        font: {
+                            size: 12
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: '시간',
+                        font: {
+                            size: 13,
+                            weight: '600'
+                        },
+                        padding: {
+                            top: 10
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// 배터리 상태 Bar Chart 생성
+function createBatteryChart(labels, charging, discharging, idle) {
+    const ctx = document.getElementById('battery-chart').getContext('2d');
+
+    if (batteryChart) {
+        batteryChart.destroy();
+    }
+
+    batteryChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: '충전 (kW)',
+                    data: charging,
+                    backgroundColor: '#34C759',
+                    borderColor: '#34C759',
+                    borderWidth: 0,
+                    borderRadius: 6
+                },
+                {
+                    label: '방전 (kW)',
+                    data: discharging,
+                    backgroundColor: '#FF9500',
+                    borderColor: '#FF9500',
+                    borderWidth: 0,
+                    borderRadius: 6
+                },
+                {
+                    label: '대기 (횟수)',
+                    data: idle,
+                    backgroundColor: '#8E8E93',
+                    borderColor: '#8E8E93',
+                    borderWidth: 0,
+                    borderRadius: 6
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'index',
+                intersect: false
+            },
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top',
+                    align: 'start',
+                    labels: {
+                        usePointStyle: true,
+                        padding: 16,
+                        font: {
+                            size: 13,
+                            weight: '500'
+                        }
+                    }
+                },
+                tooltip: {
+                    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                    padding: 12,
+                    titleFont: {
+                        size: 14,
+                        weight: '600'
+                    },
+                    bodyFont: {
+                        size: 13
+                    },
+                    cornerRadius: 8,
+                    displayColors: true,
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.dataset.label || '';
+                            const value = context.parsed.y;
+                            if (label.includes('대기')) {
+                                return `${label}: ${value}회`;
+                            }
+                            return `${label}: ${value.toFixed(2)} kW`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(0, 0, 0, 0.05)',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        font: {
+                            size: 12
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'kW / 횟수',
+                        font: {
+                            size: 13,
+                            weight: '600'
+                        },
+                        padding: {
+                            top: 10
+                        }
+                    }
+                },
+                x: {
+                    grid: {
+                        display: false,
+                        drawBorder: false
+                    },
+                    ticks: {
+                        font: {
+                            size: 12
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: '시간',
+                        font: {
+                            size: 13,
+                            weight: '600'
+                        },
+                        padding: {
+                            top: 10
+                        }
+                    }
+                }
+            }
+        }
+    });
+}
+
+// 리셋 버튼
+resetBtn.addEventListener('click', function() {
+    // 차트 파괴
+    if (loadComparisonChart) loadComparisonChart.destroy();
+    if (batteryChart) batteryChart.destroy();
+    
+    // 데이터 초기화
+    csvData = [];
+    csvUpload.value = '';
+    fileName.textContent = '';
+    
+    // UI 초기화
+    dashboardSection.style.display = 'none';
+    uploadSection.style.display = 'block';
+});
